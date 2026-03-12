@@ -16,6 +16,8 @@ import type {
   ListThreadsResult,
   Logger,
   RawMessage,
+  StreamChunk,
+  StreamOptions,
   ThreadInfo,
   WebhookOptions,
 } from "chat";
@@ -767,6 +769,29 @@ export class GitHubAdapter
         prNumber,
       },
     };
+  }
+
+  /**
+   * Stream a message by accumulating text and posting once.
+   *
+   * The default fallback posts a placeholder then edits it every 500ms.
+   * GitHub rejects these edits with 422 because `body` is empty before
+   * the first token arrives, and rapid edits risk secondary rate limits.
+   */
+  async stream(
+    threadId: string,
+    textStream: AsyncIterable<string | StreamChunk>,
+    _options?: StreamOptions
+  ): Promise<RawMessage<GitHubRawMessage>> {
+    let text = "";
+    for await (const chunk of textStream) {
+      if (typeof chunk === "string") {
+        text += chunk;
+      } else if (chunk.type === "markdown_text") {
+        text += chunk.text;
+      }
+    }
+    return this.postMessage(threadId, { markdown: text });
   }
 
   /**
